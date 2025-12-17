@@ -1,0 +1,17 @@
+[
+  {
+    "id": "hist-100",
+    "signal": "payment api outage",
+    "resolution": "Restarted service after config rollback."
+  },
+  {
+    "id": "hist-200",
+    "signal": "vpn latency",
+    "resolution": "Increased gateway capacity and purged stale sessions."
+  },
+  {
+    "id": "hist-300",
+    "signal": "email phishing",
+    "resolution": "Blocked sender, forced password resets."
+  }
+]

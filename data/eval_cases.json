@@ -1,0 +1,52 @@
+[
+  {
+    "ticket": {
+      "id": "case-1",
+      "title": "Payment API outage reported by monitoring",
+      "description": "Multiple regions report payment api outage and gateway unreachable for 10 minutes.",
+      "source": "monitoring",
+      "tags": ["api", "p0", "revenue"]
+    },
+    "expected_severity": "P0"
+  },
+  {
+    "ticket": {
+      "id": "case-2",
+      "title": "VPN latency complaints",
+      "description": "Users report high latency on VPN connections after peak hours.",
+      "source": "helpdesk",
+      "tags": ["network", "latency"]
+    },
+    "expected_severity": "P1"
+  },
+  {
+    "ticket": {
+      "id": "case-3",
+      "title": "Failed nightly ETL job",
+      "description": "ETL job failed during load phase due to timeout on database connection.",
+      "source": "data-team",
+      "tags": ["etl", "timeout"]
+    },
+    "expected_severity": "P2"
+  },
+  {
+    "ticket": {
+      "id": "case-4",
+      "title": "Question about new laptop provisioning",
+      "description": "User asks how to request a new laptop for a contractor starting next week.",
+      "source": "helpdesk",
+      "tags": ["request"]
+    },
+    "expected_severity": "P3"
+  },
+  {
+    "ticket": {
+      "id": "case-5",
+      "title": "Informational: weekly DR test passed",
+      "description": "Team reports successful DR failover test, no action required.",
+      "source": "ops",
+      "tags": ["informational", "dr"]
+    },
+    "expected_severity": "P4"
+  }
+]

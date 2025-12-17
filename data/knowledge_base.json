@@ -1,0 +1,17 @@
+[
+  {
+    "id": "kb-001",
+    "keyword": "ransomware",
+    "guidance": "Isolate affected hosts, contact security, trigger IR runbook."
+  },
+  {
+    "id": "kb-002",
+    "keyword": "latency",
+    "guidance": "Check service dependencies, recent deploys, and database health."
+  },
+  {
+    "id": "kb-003",
+    "keyword": "credentials",
+    "guidance": "Reset compromised credentials and rotate secrets."
+  }
+]
