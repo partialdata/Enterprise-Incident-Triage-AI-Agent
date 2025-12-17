@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import json
 from typing import List, Tuple
 
 from .config import get_settings
@@ -97,6 +98,42 @@ def _recommend_actions(severity: Severity, has_pii: bool) -> List[str]:
     return actions
 
 
+def _parse_llm_payload(content: str) -> dict:
+    """
+    Tolerant JSON extractor: try direct JSON, then look for a JSON block between markers,
+    then fall back to first brace-delimited object.
+    """
+    if not content:
+        return {}
+    content = content.strip()
+    try:
+        return json.loads(content)
+    except Exception:
+        pass
+
+    # Look for explicit markers
+    start_marker = "<<JSON>>"
+    end_marker = "<</JSON>>"
+    if start_marker in content and end_marker in content:
+        block = content.split(start_marker, 1)[1].split(end_marker, 1)[0].strip()
+        try:
+            return json.loads(block)
+        except Exception:
+            pass
+
+    # Last resort: extract first JSON object
+    first_brace = content.find("{")
+    last_brace = content.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        candidate = content[first_brace : last_brace + 1]
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+
+    return {}
+
+
 class IncidentTriageAgent:
     def __init__(self, kb_tool: KnowledgeBaseTool, history_tool: HistoryTool, llm_client: LLMClient | None = None):
         self.kb_tool = kb_tool
@@ -181,9 +218,13 @@ Return JSON only. Use this template between markers:
             fallback_rationale=rationale,
         )
 
+        llm_resp = None
+        llm_payload = {}
         try:
             llm_resp = self.llm.generate(prompt, max_tokens=self.settings.max_tokens)
-            llm_payload = json.loads(llm_resp.content)
+            llm_payload = _parse_llm_payload(llm_resp.content)
+            if not llm_payload:
+                raise ValueError("empty_or_invalid_llm_payload")
             logger.info(
                 "llm_completed",
                 extra=log_extra(
@@ -195,11 +236,11 @@ Return JSON only. Use this template between markers:
             )
         except Exception as exc:
             logger.warning(
-                "llm_failure_fallback",
-                extra=log_extra(ticket_id=ticket.id, error=str(exc)),
+                "llm_failure_fallback error=%s content_snippet=%s",
+                exc,
+                (llm_resp.content[:240] if llm_resp else ""),
+                extra=log_extra(ticket_id=ticket.id),
             )
-            llm_payload = {}
-            llm_resp = None  # type: ignore[assignment]
 
         summary = llm_payload.get("summary", fallback_summary)
         actions = llm_payload.get("recommended_actions", fallback_actions)

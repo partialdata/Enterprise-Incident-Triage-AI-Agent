@@ -165,6 +165,7 @@ class OllamaLLMClient(LLMClient):
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": target_tokens,
             "stream": False,
+            "format": "json",
         }
         resp = self._client.post("/v1/chat/completions", json=payload)
         resp.raise_for_status()

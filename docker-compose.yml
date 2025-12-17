@@ -1,14 +1,14 @@
-version: "3.9"
-
 services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama-data:/root/.ollama
     restart: unless-stopped
+    networks:
+      - incident-triage-network
 
   app:
     build: .
@@ -27,6 +27,12 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    networks:
+      - incident-triage-network
 
 volumes:
   ollama-data:
+
+networks:
+  incident-triage-network:
+    name: incident-triage-network

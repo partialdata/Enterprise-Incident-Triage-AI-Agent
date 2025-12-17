@@ -132,6 +132,13 @@ scripts/run_with_ollama.sh up    # starts stack
 scripts/run_with_ollama.sh down  # stops stack
 ```
 
+Port note: if 11434 is already in use, the script will auto-fallback to another port (11435/11436/11437) unless you explicitly set `OLLAMA_PORT`. To force a specific port, set `export OLLAMA_PORT=11435` before running.
+
+### Monitoring logs
+- App logs: `docker compose logs -f app` (or `docker logs -f incident-triage`)
+- Full stack: `docker compose logs -f`
+Look for `llm_generate` entries to confirm LLM calls are being made; if absent, the agent is using deterministic fallbacks.
+
 ## Project Layout
 
 - `app/main.py` — FastAPI service entrypoint
