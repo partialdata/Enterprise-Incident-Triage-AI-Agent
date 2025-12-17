@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: incident-triage
+    depends_on:
+      - ollama
+    environment:
+      LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+      LLM_FAIL_OPEN: "false"
+      MAX_TOKENS: ${MAX_TOKENS:-512}
+      COST_PER_1K_TOKENS: ${COST_PER_1K_TOKENS:-0.0}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.65}
+      REDACT_PII: ${REDACT_PII:-true}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+volumes:
+  ollama-data:

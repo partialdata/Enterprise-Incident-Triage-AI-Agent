@@ -2,7 +2,9 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict
+
+import httpx
 
 from .config import get_settings
 from .logging_utils import log_extra
@@ -81,9 +83,155 @@ class MockLLMClient(LLMClient):
         return json.dumps(payload)
 
 
+class OpenAILLMClient(LLMClient):
+    """
+    OpenAI Chat Completions client.
+    Requires OPENAI_API_KEY; optionally OPENAI_BASE_URL for compatible endpoints.
+    """
+
+    def __init__(self):
+        try:
+            from openai import OpenAI  # type: ignore
+        except ImportError as exc:  # pragma: no cover - import guard
+            raise RuntimeError(
+                "openai package not installed; add openai to requirements"
+            ) from exc
+
+        settings = get_settings()
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for OpenAI provider")
+
+        self.client = OpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+        )
+        self.model = settings.resolved_llm_model()
+        self.cost_per_1k_tokens = float(
+            getattr(settings, "cost_per_1k_tokens", "0.0")
+        )
+
+    def generate(self, prompt: str, max_tokens: int = 512) -> LLMResponse:
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        content = resp.choices[0].message.content or "{}"
+        usage = resp.usage
+        prompt_tokens = usage.prompt_tokens if usage else 0
+        completion_tokens = usage.completion_tokens if usage else 0
+        cost_usd = ((prompt_tokens + completion_tokens) / 1000) * self.cost_per_1k_tokens
+
+        logger.info(
+            "llm_generate",
+            extra=log_extra(
+                provider="openai",
+                model=self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=round(cost_usd, 6),
+            ),
+        )
+        return LLMResponse(
+            content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cost_usd=cost_usd,
+        )
+
+
+class OllamaLLMClient(LLMClient):
+    """
+    Ollama chat client using the local HTTP API.
+    Requires the Ollama daemon reachable at OLLAMA_BASE_URL.
+    """
+
+    def __init__(self):
+        settings = get_settings()
+        self.base_url = settings.ollama_base_url.rstrip("/")
+        self.model = settings.resolved_llm_model()
+        self.max_tokens = settings.max_tokens
+        self.cost_per_1k_tokens = float(
+            getattr(settings, "cost_per_1k_tokens", "0.0")
+        )
+        self._client = httpx.Client(base_url=self.base_url, timeout=30)
+
+    def generate(self, prompt: str, max_tokens: int = 512) -> LLMResponse:
+        target_tokens = min(max_tokens, self.max_tokens)
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": target_tokens,
+            "stream": False,
+        }
+        resp = self._client.post("/v1/chat/completions", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"] if data.get("choices") else "{}"
+        prompt_tokens = data.get("prompt_eval_count", 0)
+        completion_tokens = data.get("eval_count", 0)
+        cost_usd = ((prompt_tokens + completion_tokens) / 1000) * self.cost_per_1k_tokens
+
+        logger.info(
+            "llm_generate",
+            extra=log_extra(
+                provider="ollama",
+                model=self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=round(cost_usd, 6),
+            ),
+        )
+        return LLMResponse(
+            content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cost_usd=cost_usd,
+        )
+
+
+LLMClientFactory = Callable[[], LLMClient]
+
+
+LLM_PROVIDERS: Dict[str, LLMClientFactory] = {
+    "mock": MockLLMClient,
+    "openai": OpenAILLMClient,
+    "ollama": OllamaLLMClient,
+}
+
+
+def register_llm_provider(name: str, factory: LLMClientFactory) -> None:
+    """
+    Register an LLM provider factory.
+    Intentionally simple; extend with auth/config wiring per provider as needed.
+    """
+    LLM_PROVIDERS[name.strip().lower()] = factory
+
+
 def build_llm_client() -> LLMClient:
     settings = get_settings()
-    provider = settings.llm_provider.lower()
-    if provider == "mock":
-        return MockLLMClient()
-    raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
+    provider = (settings.llm_provider or "mock").strip().lower() or "mock"
+
+    factory = LLM_PROVIDERS.get(provider)
+    if not factory:
+        message = f"Unsupported LLM_PROVIDER: {provider}"
+        if settings.llm_fail_open:
+            logger.warning(
+                "llm_provider_unsupported",
+                extra=log_extra(provider=provider, fallback="mock"),
+            )
+            return MockLLMClient()
+        raise ValueError(message)
+
+    try:
+        return factory()
+    except Exception as exc:
+        if settings.llm_fail_open:
+            logger.warning(
+                "llm_provider_init_failed",
+                extra=log_extra(provider=provider, error=str(exc), fallback="mock"),
+            )
+            return MockLLMClient()
+        raise

@@ -10,6 +10,7 @@ from .agent import IncidentTriageAgent
 from .config import get_settings
 from .logging_utils import configure_logging, log_extra, set_request_id
 from .models import FileTriageRequest, IncidentResponse, IncidentTicket
+from .llm import build_llm_client
 from .tools import HistoryTool, KnowledgeBaseTool
 
 configure_logging()
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 kb_tool = KnowledgeBaseTool()
 history_tool = HistoryTool()
-agent = IncidentTriageAgent(kb_tool, history_tool)
+llm_client = build_llm_client()
+agent = IncidentTriageAgent(kb_tool, history_tool, llm_client=llm_client)
 app = FastAPI(title="Enterprise Incident Triage AI Agent", version="0.1.0")
 
 

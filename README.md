@@ -1,6 +1,6 @@
 # Enterprise Incident Triage AI Agent
 
-Production-style MVP for an AI agent that triages IT/security incidents with structured severity classification, summarization, and governance controls.
+ Production-style MVP for an AI agent that triages IT/security incidents with structured severity classification, summarization, and governance controls.
 
 ## What this solves
 
@@ -12,7 +12,7 @@ Large enterprises get flooded with incident tickets. Manual triage is slow and i
 - Deterministic severity scoring with boosts from mock knowledge base/history tools
 - PII detection and redaction before processing
 - Confidence scoring with escalation when below threshold
-- Pluggable LLM client (mock by default) for summaries/actions/rationale with JSON-schema prompting and cost/tokens logging
+- Pluggable LLM client (mock by default; OpenAI and Ollama supported) for summaries/actions/rationale with JSON-schema prompting and cost/tokens logging
 - Structured outputs via Pydantic; request-scoped structured logging
 - Evaluation harness with labeled cases and unit tests
 
@@ -58,14 +58,38 @@ The API runs on `http://127.0.0.1:8000`. Health check: `GET /health`.
 
 ## Configuration
 
-Environment variables:
-- `LLM_PROVIDER` (default `mock`)
-- `LLM_MODEL` (default `mock-001`)
+ Environment variables:
+- `LLM_PROVIDER` (default `mock`; `openai` and `ollama` supported)
+- `LLM_MODEL` (defaults per provider: `mock-001` for mock, `gpt-4o-mini` for OpenAI, `llama3` for Ollama)
+- `LLM_FAIL_OPEN` (`false` default). If `true`, unsupported/failed providers fall back to mock instead of raising.
+- OpenAI: `OPENAI_API_KEY` (required when `LLM_PROVIDER=openai`), `OPENAI_BASE_URL` (optional; for compatible endpoints/proxies)
+- Ollama: `OLLAMA_MODEL` (optional override), `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`)
 - `MAX_TOKENS` (default `512`)
-- `COST_PER_1K_TOKENS` (default `0.0` for offline mock)
+- `COST_PER_1K_TOKENS` (default `0.0` for offline mock; set your pricing for usage logging)
 - `CONFIDENCE_THRESHOLD` (default `0.65`)
 - `REDACT_PII` (`true`/`false`, default `true`)
 - `KNOWLEDGE_BASE_PATH`, `HISTORY_PATH`, `EVAL_CASES_PATH` (override data files)
+
+### Using OpenAI
+```bash
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+# optional
+export LLM_MODEL=gpt-4o-mini
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export LLM_FAIL_OPEN=false  # strict by default
+uvicorn app.main:app --reload
+```
+
+### Using Ollama (local/free)
+```bash
+# Ensure ollama is running locally and model is pulled: `ollama pull llama3`
+export LLM_PROVIDER=ollama
+export OLLAMA_MODEL=llama3           # optional; defaults to llama3
+export OLLAMA_BASE_URL=http://127.0.0.1:11434
+export LLM_FAIL_OPEN=false           # strict by default
+uvicorn app.main:app --reload
+```
 
 ## Evaluation
 
@@ -86,6 +110,26 @@ pytest
 ```bash
 docker build -t incident-triage:local .
 docker run -p 8000:8000 incident-triage:local
+```
+
+### Docker with Ollama (two containers)
+```bash
+# 1) Build the app image
+docker compose build
+
+# 2) Start Ollama and pull a model (one-time per model)
+docker compose up -d ollama
+docker compose run --rm ollama ollama pull llama3
+
+# 3) Start the app (uses Ollama at http://ollama:11434)
+docker compose up -d app
+```
+App will listen on `http://127.0.0.1:8000` and call the Ollama container for LLM responses. Adjust `OLLAMA_MODEL`, `MAX_TOKENS`, etc. via environment overrides when running `docker compose` (see `docker-compose.yml`).
+
+Shortcut script (build + pull model + start both):
+```bash
+scripts/run_with_ollama.sh up    # starts stack
+scripts/run_with_ollama.sh down  # stops stack
 ```
 
 ## Project Layout
