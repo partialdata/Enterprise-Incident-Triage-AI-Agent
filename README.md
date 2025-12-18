@@ -199,5 +199,10 @@ flowchart TD;
 - Tests: run `pytest` on supported Python (3.10–3.12) before releases.
 - Escalation health: monitor logs for `llm_failure_fallback` and low-confidence escalations; investigate spikes before shipping prompt/model tweaks.
 
+### Agent-computer interface (tool contracts)
+- KnowledgeBaseTool: loads `KNOWLEDGE_BASE_PATH` JSON entries with `keyword`/`id`; search returns matching ids by substring. Missing file → empty list + warning.
+- HistoryTool: loads `HISTORY_PATH` JSON entries with `signal`/`id`; search returns matching ids by substring. Missing file → empty list + warning.
+- The agent always calls these tools deterministically before the LLM and passes their ids to the prompt; tool outputs are validated/capped before use.
+
 
 ---

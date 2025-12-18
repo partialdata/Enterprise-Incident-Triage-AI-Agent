@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeBaseTool:
+    """Simple keyword matcher for knowledge base entries loaded from JSON."""
     def __init__(self, path: str | None = None):
         settings = get_settings()
         self.path = path or settings.knowledge_base_path
@@ -31,6 +32,7 @@ class KnowledgeBaseTool:
 
 
 class HistoryTool:
+    """Simple signal matcher for historical incidents loaded from JSON."""
     def __init__(self, path: str | None = None):
         settings = get_settings()
         self.path = path or settings.history_path

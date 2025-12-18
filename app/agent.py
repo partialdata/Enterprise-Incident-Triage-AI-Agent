@@ -185,6 +185,21 @@ def _validate_llm_payload(
     return summary_str, cleaned_actions, rationale_str
 
 
+def _build_plan(
+    severity: Severity,
+    knowledge_refs: List[str],
+    history_refs: List[str],
+    fallback_actions: List[str],
+) -> List[str]:
+    plan = [
+        f"Use severity={severity.value} from deterministic scoring",
+        f"Knowledge refs: {', '.join(knowledge_refs) or 'none'}",
+        f"History refs: {', '.join(history_refs) or 'none'}",
+        f"Initial actions: {', '.join(fallback_actions)}",
+    ]
+    return plan
+
+
 class IncidentTriageAgent:
     def __init__(
         self,
@@ -285,12 +300,14 @@ Return JSON only. Use this template between markers:
         summary_source = description if redacted else ticket.description
         fallback_summary = _summarize_text(summary_source)
         fallback_actions = _recommend_actions(severity, has_pii)
+        plan_steps = _build_plan(severity, knowledge_refs, history_refs, fallback_actions)
         self._record_trace(
             "contextual_hits",
             knowledge_refs=knowledge_refs,
             history_refs=history_refs,
             adjusted_confidence=confidence,
             escalation_required=escalation_required,
+            plan=plan_steps,
         )
 
         prompt = self._build_prompt(
@@ -307,6 +324,7 @@ Return JSON only. Use this template between markers:
             prompt_version=PROMPT_VERSION,
             fallback_summary=fallback_summary,
             fallback_actions=fallback_actions,
+            plan=plan_steps,
         )
 
         llm_resp = None
@@ -359,6 +377,9 @@ Return JSON only. Use this template between markers:
             fallback_actions=fallback_actions,
             fallback_rationale=rationale,
         )
+        if escalation_required:
+            # Help reviewers by surfacing the plan for low-confidence cases.
+            rationale_text = f"{rationale_text}; plan: {' | '.join(plan_steps)}"
 
         recommendation = AgentRecommendation(
             summary=summary,

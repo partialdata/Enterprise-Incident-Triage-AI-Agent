@@ -61,6 +61,9 @@ def test_tracing_records_core_phases():
     assert "ticket_received" in phases
     assert "severity_scored" in phases
     assert "recommendation_finalized" in phases
+    # plan should be present in contextual hits
+    contextual = [e for e in tracer.events if e.phase == "contextual_hits"]
+    assert contextual and "plan" in contextual[0].data
 
 
 def test_llm_payload_validation_fallbacks():
