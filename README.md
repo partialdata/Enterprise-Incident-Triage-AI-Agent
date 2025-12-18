@@ -153,7 +153,7 @@ Look for `llm_generate` entries to confirm LLM calls are being made; if absent, 
 
 ## Architecture (text diagram)
 
-```
+```mermaid
 Clients (curl/script) 
    ↓ HTTP
 FastAPI service (app/main.py)
