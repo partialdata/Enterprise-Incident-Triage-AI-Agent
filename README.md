@@ -154,7 +154,6 @@ Look for `llm_generate` entries to confirm LLM calls are being made; if absent, 
 ## Architecture (text diagram)
 
 
-
 ```mermaid
 flowchart TD;
   C["Clients (curl/script)"] -->|HTTP| F["FastAPI service<br/>(app/main.py)"]
@@ -170,22 +169,6 @@ flowchart TD;
 
 ```
 
-
-
-```
-Clients (curl/script) 
-   ↓ HTTP
-FastAPI service (app/main.py)
-   ↓
-IncidentTriageAgent (app/agent.py)
-   ├─ Severity/PII governance (redaction, confidence, escalation)
-   ├─ LLM client (app/llm.py) for summary/actions/rationale (mock pluggable)
-   ├─ Knowledge base tool (app/tools.py → data/knowledge_base.json)
-   ├─ History tool (app/tools.py → data/history.json)
-   └─ Structured logging + request IDs (app/logging_utils.py)
-   ↓
-Response: summary, severity, actions, confidence, escalation flag, refs, redaction status
-```
 
 ## Notes
 
