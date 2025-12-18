@@ -11,6 +11,7 @@ from .config import get_settings
 from .logging_utils import configure_logging, log_extra, set_request_id
 from .models import FileTriageRequest, IncidentResponse, IncidentTicket
 from .llm import build_llm_client
+from .tracing import FileTracer, LoggingTracer, MultiTracer
 from .tools import HistoryTool, KnowledgeBaseTool
 
 configure_logging()
@@ -20,7 +21,10 @@ settings = get_settings()
 kb_tool = KnowledgeBaseTool()
 history_tool = HistoryTool()
 llm_client = build_llm_client()
-agent = IncidentTriageAgent(kb_tool, history_tool, llm_client=llm_client)
+logging_tracer = LoggingTracer(logging.getLogger("app.tracer"))
+file_tracer = FileTracer(settings.traces_path)
+tracer = MultiTracer([logging_tracer, file_tracer])
+agent = IncidentTriageAgent(kb_tool, history_tool, llm_client=llm_client, tracer=tracer)
 app = FastAPI(title="Enterprise Incident Triage AI Agent", version="0.1.0")
 
 

@@ -53,6 +53,7 @@ The API runs on `http://127.0.0.1:8000`. Health check: `GET /health`.
 - Severity classification (P0–P4) via deterministic rules + signals from mock knowledge base/history tools.
 - PII detection & redaction (email/phone) when `REDACT_PII=true` (summary uses redacted text).
 - Confidence scoring with human escalation when below `CONFIDENCE_THRESHOLD` (default 0.65) and request-scoped structured logging.
+- Trace logging for each agent phase (ticket receipt → PII scan → scoring → prompt/LLM → recommendation) via `LoggingTracer`; traces also land in `data/traces.jsonl` via `FileTracer` for offline analysis/dataset growth; swap in `InMemoryTracer` for test-only capture.
 - LLM client abstraction (mock by default) with JSON schema enforcement and cost logging hooks.
 - Structured responses validated via Pydantic models.
 
@@ -174,3 +175,23 @@ flowchart TD;
 
 - No external model calls are required; deterministic rules satisfy the MVP and can be swapped with an API-based LLM client later.
 - Keep secrets out of source control; configure via environment variables or secret management in production.
+- Prompts are versioned (`PROMPT_VERSION` in `app/agent.py`) so traces/evals can be tied back to a specific prompt shape when you iterate.
+
+### Trace export for eval growth
+- Default trace sink: `data/traces.jsonl` (configurable via `TRACES_PATH`).
+- Export traces to candidate eval cases (review/edit `expected_severity` before using):
+  ```bash
+  python scripts/export_traces.py --traces data/traces.jsonl --out data/eval_cases_candidates.json
+  ```
+  Then copy vetted cases into `data/eval_cases.json` to expand coverage.
+- Why this helps: traces capture what the agent saw/decided, so you can audit odd outcomes, safely compare prompt/model tweaks on the same tickets, and turn real-world tickets into eval cases instead of synthetic examples.
+
+### Merging vetted candidates into the main eval set
+- After reviewing/editing `data/eval_cases_candidates.json`, merge them:
+  ```bash
+  python scripts/merge_eval_cases.py --base data/eval_cases.json --candidates data/eval_cases_candidates.json --mode skip
+  ```
+  Use `--mode replace` to overwrite existing cases with the same ticket id; `skip` leaves existing cases untouched.
+
+
+---

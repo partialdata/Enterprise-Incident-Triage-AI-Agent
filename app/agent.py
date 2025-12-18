@@ -1,16 +1,17 @@
 import json
 import logging
 import re
-import json
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 from .config import get_settings
 from .llm import LLMClient, build_llm_client
 from .logging_utils import log_extra
 from .models import AgentRecommendation, IncidentTicket, Severity
+from .tracing import AgentTracer, NullTracer
 from .tools import HistoryTool, KnowledgeBaseTool
 
 logger = logging.getLogger(__name__)
+PROMPT_VERSION = "v1.1"
 
 
 def _detect_pii(text: str) -> bool:
@@ -135,11 +136,24 @@ def _parse_llm_payload(content: str) -> dict:
 
 
 class IncidentTriageAgent:
-    def __init__(self, kb_tool: KnowledgeBaseTool, history_tool: HistoryTool, llm_client: LLMClient | None = None):
+    def __init__(
+        self,
+        kb_tool: KnowledgeBaseTool,
+        history_tool: HistoryTool,
+        llm_client: LLMClient | None = None,
+        tracer: AgentTracer | None = None,
+    ):
         self.kb_tool = kb_tool
         self.history_tool = history_tool
         self.settings = get_settings()
         self.llm = llm_client or build_llm_client()
+        self.tracer = tracer or NullTracer()
+
+    def _record_trace(self, phase: str, **data: Any) -> None:
+        try:
+            self.tracer.record(phase, **data)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("trace_record_failed %s", exc, extra=log_extra(phase=phase))
 
     def _build_prompt(
         self,
@@ -163,6 +177,7 @@ Context:
 - tags: {', '.join(ticket.tags)}
 - knowledge_refs: {', '.join(knowledge_refs) or 'none'}
 - history_refs: {', '.join(history_refs) or 'none'}
+- prompt_version: {PROMPT_VERSION}
 
 Return JSON only. Use this template between markers:
 <<JSON>>
@@ -175,6 +190,7 @@ Return JSON only. Use this template between markers:
 """
 
     def process(self, ticket: IncidentTicket) -> AgentRecommendation:
+        self._record_trace("ticket_received", ticket=ticket.model_dump())
         logger.info(
             "processing_ticket",
             extra=log_extra(
@@ -190,10 +206,19 @@ Return JSON only. Use this template between markers:
         if has_pii and self.settings.redact_pii:
             description = _redact(description)
             redacted = True
+        self._record_trace("pii_scan", has_pii=has_pii, redacted=redacted)
 
         severity, confidence, rationale = _score_severity(ticket.title, description, ticket.tags)
         knowledge_refs = self.kb_tool.search(description)
         history_refs = self.history_tool.search(description)
+        self._record_trace(
+            "severity_scored",
+            severity=severity.value,
+            confidence=confidence,
+            rationale=rationale,
+            knowledge_refs=knowledge_refs,
+            history_refs=history_refs,
+        )
 
         if knowledge_refs:
             confidence += 0.05
@@ -207,6 +232,13 @@ Return JSON only. Use this template between markers:
         summary_source = description if redacted else ticket.description
         fallback_summary = _summarize_text(summary_source)
         fallback_actions = _recommend_actions(severity, has_pii)
+        self._record_trace(
+            "contextual_hits",
+            knowledge_refs=knowledge_refs,
+            history_refs=history_refs,
+            adjusted_confidence=confidence,
+            escalation_required=escalation_required,
+        )
 
         prompt = self._build_prompt(
             ticket=ticket,
@@ -216,6 +248,12 @@ Return JSON only. Use this template between markers:
             fallback_summary=fallback_summary,
             fallback_actions=fallback_actions,
             fallback_rationale=rationale,
+        )
+        self._record_trace(
+            "prompt_built",
+            prompt_version=PROMPT_VERSION,
+            fallback_summary=fallback_summary,
+            fallback_actions=fallback_actions,
         )
 
         llm_resp = None
@@ -234,12 +272,26 @@ Return JSON only. Use this template between markers:
                     completion_tokens=llm_resp.completion_tokens,
                 ),
             )
+            self._record_trace(
+                "llm_response",
+                prompt_version=PROMPT_VERSION,
+                provider=self.llm.__class__.__name__,
+                prompt_tokens=llm_resp.prompt_tokens,
+                completion_tokens=llm_resp.completion_tokens,
+                cost_usd=round(llm_resp.cost_usd, 6),
+            )
         except Exception as exc:
             logger.warning(
                 "llm_failure_fallback error=%s content_snippet=%s",
                 exc,
                 (llm_resp.content[:240] if llm_resp else ""),
                 extra=log_extra(ticket_id=ticket.id),
+            )
+            self._record_trace(
+                "llm_failure",
+                error=str(exc),
+                prompt_version=PROMPT_VERSION,
+                content_snippet=(llm_resp.content[:240] if llm_resp else ""),
             )
 
         summary = llm_payload.get("summary", fallback_summary)
@@ -267,6 +319,15 @@ Return JSON only. Use this template between markers:
                 escalation=recommendation.escalation_required,
                 redacted=recommendation.redacted,
             ),
+        )
+        self._record_trace(
+            "recommendation_finalized",
+            summary=summary,
+            severity=recommendation.severity.value,
+            confidence=recommendation.confidence,
+            escalation_required=escalation_required,
+            redacted=redacted,
+            ticket_id=ticket.id,
         )
 
         return recommendation

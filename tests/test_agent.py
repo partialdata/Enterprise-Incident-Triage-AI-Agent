@@ -2,6 +2,7 @@ from app.agent import IncidentTriageAgent
 from app.llm import MockLLMClient
 from app.models import IncidentTicket, Severity
 from app.tools import HistoryTool, KnowledgeBaseTool
+from app.tracing import InMemoryTracer
 
 
 def build_agent():
@@ -37,3 +38,24 @@ def test_pii_redaction_and_escalation():
     assert rec.redacted is True
     assert "[REDACTED_EMAIL]" in rec.summary or "[REDACTED_PHONE]" in rec.summary
     assert isinstance(rec.recommended_actions, list)
+
+
+def test_tracing_records_core_phases():
+    tracer = InMemoryTracer()
+    agent = IncidentTriageAgent(
+        kb_tool=KnowledgeBaseTool(),
+        history_tool=HistoryTool(),
+        llm_client=MockLLMClient(),
+        tracer=tracer,
+    )
+    ticket = IncidentTicket(
+        id="t-3",
+        title="VPN latency spike",
+        description="Employees report slow VPN connections after hours",
+        tags=["vpn", "latency"],
+    )
+    agent.process(ticket)
+    phases = [event.phase for event in tracer.events]
+    assert "ticket_received" in phases
+    assert "severity_scored" in phases
+    assert "recommendation_finalized" in phases

@@ -1,0 +1,43 @@
+[
+  {
+    "ticket": {
+      "id": "ticket-1",
+      "title": "Database latency alert",
+      "description": "Primary DB showing elevated latency after deploy",
+      "reported_at": "2025-12-18 18:52:53.936680+00:00",
+      "source": "api",
+      "tags": [
+        "db",
+        "latency"
+      ]
+    },
+    "expected_severity": "P1"
+  },
+  {
+    "ticket": {
+      "id": "t1",
+      "title": "VPN latency",
+      "description": "Users report slow VPN connections after hours",
+      "reported_at": "2025-12-18 18:52:56.140274+00:00",
+      "source": "api",
+      "tags": [
+        "vpn",
+        "latency"
+      ]
+    },
+    "expected_severity": "P1"
+  },
+  {
+    "ticket": {
+      "id": "file-1",
+      "title": "Service request: laptop provisioning",
+      "description": "User asks how to request a new laptop for contractor",
+      "reported_at": "2025-12-18 18:52:57.315562+00:00",
+      "source": "api",
+      "tags": [
+        "request"
+      ]
+    },
+    "expected_severity": "P3"
+  }
+]
