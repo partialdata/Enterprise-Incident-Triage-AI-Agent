@@ -193,5 +193,11 @@ flowchart TD;
   ```
   Use `--mode replace` to overwrite existing cases with the same ticket id; `skip` leaves existing cases untouched.
 
+### Operational checklist (safe iteration)
+- Tracing on: `TRACES_PATH` writable; `data/traces.jsonl` is updating per request.
+- Eval ready: expand `data/eval_cases.json` from recent traces; run `python scripts/evaluate.py` before/after prompt/model changes.
+- Tests: run `pytest` on supported Python (3.10–3.12) before releases.
+- Escalation health: monitor logs for `llm_failure_fallback` and low-confidence escalations; investigate spikes before shipping prompt/model tweaks.
+
 
 ---

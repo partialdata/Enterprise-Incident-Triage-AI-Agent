@@ -16,8 +16,15 @@ PROMPT_VERSION = "v1.1"
 
 def _detect_pii(text: str) -> bool:
     email_pattern = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
-    phone_pattern = r"(\+?\d{1,2}[\s-]?)?(\(\d{3}\)|\d{3})[\s-]?\d{3}[\s-]?\d{4}"
-    return bool(re.search(email_pattern, text) or re.search(phone_pattern, text))
+    phone_pattern = r"(\+?\d{1,2}[\s\-.]?)?(\(\d{3}\)|\d{3})[\s\-.]?\d{3}[\s\-.]?\d{4}"
+    ip_pattern = r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b"
+    ssn_pattern = r"\b\d{3}-\d{2}-\d{4}\b"
+    return bool(
+        re.search(email_pattern, text)
+        or re.search(phone_pattern, text)
+        or re.search(ip_pattern, text)
+        or re.search(ssn_pattern, text)
+    )
 
 
 def _redact(text: str) -> str:
@@ -25,15 +32,22 @@ def _redact(text: str) -> str:
         r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", text
     )
     text = re.sub(
-        r"(\+?\d{1,2}[\s-]?)?(\(\d{3}\)|\d{3})[\s-]?\d{3}[\s-]?\d{4}",
+        r"(\+?\d{1,2}[\s\-.]?)?(\(\d{3}\)|\d{3})[\s\-.]?\d{3}[\s\-.]?\d{4}",
         "[REDACTED_PHONE]",
         text,
     )
+    text = re.sub(
+        r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b",
+        "[REDACTED_IP]",
+        text,
+    )
+    text = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]", text)
     return text
 
 
 def _score_severity(title: str, description: str, tags: List[str]) -> Tuple[Severity, float, str]:
     text = f"{title.lower()} {description.lower()} {' '.join(tags).lower()}"
+    lowered_tags = [t.lower() for t in tags]
     score = 0.5
     rationale_parts = []
 
@@ -68,7 +82,7 @@ def _score_severity(title: str, description: str, tags: List[str]) -> Tuple[Seve
         severity = Severity.P4
         rationale_parts.append("no strong signals")
 
-    if "p0" in text:
+    if "p0" in lowered_tags:
         severity = Severity.P0
         score = max(score, 0.92)
         rationale_parts.append("explicit severity tag")
@@ -135,6 +149,42 @@ def _parse_llm_payload(content: str) -> dict:
     return {}
 
 
+def _validate_llm_payload(
+    summary: Any,
+    actions: Any,
+    rationale: Any,
+    fallback_summary: str,
+    fallback_actions: List[str],
+    fallback_rationale: str,
+) -> Tuple[str, List[str], str]:
+    """
+    Validate and sanitize LLM outputs to avoid malformed content leaking into responses.
+    """
+    if not isinstance(summary, str) or not summary.strip():
+        summary_str = fallback_summary
+    else:
+        summary_str = summary.strip()[:240]
+
+    cleaned_actions: List[str] = []
+    if isinstance(actions, list):
+        for act in actions:
+            if isinstance(act, str):
+                cleaned = act.strip()
+                if cleaned:
+                    cleaned_actions.append(cleaned)
+            if len(cleaned_actions) >= 5:
+                break
+    if not cleaned_actions:
+        cleaned_actions = fallback_actions
+
+    if not isinstance(rationale, str) or not rationale.strip():
+        rationale_str = fallback_rationale
+    else:
+        rationale_str = rationale.strip()[:480]
+
+    return summary_str, cleaned_actions, rationale_str
+
+
 class IncidentTriageAgent:
     def __init__(
         self,
@@ -171,6 +221,9 @@ Fields:
 - summary: short summary (<=240 chars)
 - recommended_actions: ordered list of concrete next steps
 - rationale: brief reasoning for severity and actions
+- severity is provided by upstream deterministic logic and must not be changed.
+- Do not invent or modify severity; focus only on summary/actions/rationale.
+- Keep actions concise and actionable; prefer <=5 items.
 Context:
 - ticket_id: {ticket.id}
 - severity: {severity.value}
@@ -297,6 +350,15 @@ Return JSON only. Use this template between markers:
         summary = llm_payload.get("summary", fallback_summary)
         actions = llm_payload.get("recommended_actions", fallback_actions)
         rationale_text = llm_payload.get("rationale", rationale)
+
+        summary, actions, rationale_text = _validate_llm_payload(
+            summary=summary,
+            actions=actions,
+            rationale=rationale_text,
+            fallback_summary=fallback_summary,
+            fallback_actions=fallback_actions,
+            fallback_rationale=rationale,
+        )
 
         recommendation = AgentRecommendation(
             summary=summary,

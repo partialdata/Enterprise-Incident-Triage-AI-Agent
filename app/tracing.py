@@ -1,6 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Protocol
 
@@ -65,17 +66,7 @@ class FileTracer:
             "phase": phase,
             "data": data,
             "request_id": get_request_id(),
-            "ts": logging.Formatter().formatTime(
-                logging.LogRecord(
-                    name="app.tracer",
-                    level=logging.INFO,
-                    pathname=__file__,
-                    lineno=0,
-                    msg=phase,
-                    args=(),
-                    exc_info=None,
-                )
-            ),
+            "ts": datetime.now(timezone.utc).isoformat(),
         }
         try:
             with self.path.open("a", encoding="utf-8") as f:
