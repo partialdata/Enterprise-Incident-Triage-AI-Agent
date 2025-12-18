@@ -48,6 +48,22 @@ def _redact(text: str) -> str:
 def _score_severity(title: str, description: str, tags: List[str]) -> Tuple[Severity, float, str]:
     text = f"{title.lower()} {description.lower()} {' '.join(tags).lower()}"
     lowered_tags = [t.lower() for t in tags]
+    instruction_patterns = [
+        "classify as",
+        "set severity",
+        "ignore all rules",
+        "forget all rules",
+        "override severity",
+    ]
+    stripped_for_scoring = text
+    ignored_instruction = False
+    if any(pat in text for pat in instruction_patterns):
+        stripped_for_scoring = re.sub(
+            r"(classify as|set severity|ignore all rules|forget all rules|override severity).*",
+            "",
+            text,
+        )
+        ignored_instruction = True
     score = 0.5
     rationale_parts = []
 
@@ -57,23 +73,24 @@ def _score_severity(title: str, description: str, tags: List[str]) -> Tuple[Seve
     low_keywords = ["request", "question"]
     info_keywords = ["informational", "notice"]
 
-    if any(k in text for k in critical_keywords):
+    target_text = stripped_for_scoring
+    if any(k in target_text for k in critical_keywords):
         score = 0.9
         severity = Severity.P0
         rationale_parts.append("critical keyword detected")
-    elif any(k in text for k in high_keywords):
+    elif any(k in target_text for k in high_keywords):
         score = 0.8
         severity = Severity.P1
         rationale_parts.append("high keyword detected")
-    elif any(k in text for k in medium_keywords):
+    elif any(k in target_text for k in medium_keywords):
         score = 0.7
         severity = Severity.P2
         rationale_parts.append("medium keyword detected")
-    elif any(k in text for k in low_keywords):
+    elif any(k in target_text for k in low_keywords):
         score = 0.55
         severity = Severity.P3
         rationale_parts.append("request/question keyword detected")
-    elif any(k in text for k in info_keywords):
+    elif any(k in target_text for k in info_keywords):
         score = 0.35
         severity = Severity.P4
         rationale_parts.append("informational keyword detected")
@@ -86,6 +103,8 @@ def _score_severity(title: str, description: str, tags: List[str]) -> Tuple[Seve
         severity = Severity.P0
         score = max(score, 0.92)
         rationale_parts.append("explicit severity tag")
+    if ignored_instruction:
+        rationale_parts.append("ignored instruction-like severity override")
 
     return severity, score, "; ".join(rationale_parts)
 
